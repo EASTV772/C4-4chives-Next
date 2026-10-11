@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+
+<style>
+    @font-face {
+        font-family: 'C4HeadlineBold';
+        src: url('4Headline-Bold.ttf') format('truetype');
+        font-weight: 700;
+        font-style: normal;
+        font-display: block;
+    }
+
+    @font-face {
+        font-family: 'xt-Regular';
+        src: url('xt-Regular.ttf') format('truetype');
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        background: #000;
+        display: flex;
+        color: white;
+        height: 100vh;
+        overflow: hidden;
+        font-family: sans-serif;
+    }
+
+    /* EDITOR */
+    #editor {
+        width: 300px;
+        background: #111;
+        padding: 15px;
+        border-right: 1px solid #333;
+        flex-shrink: 0;
+        z-index: 10;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .input-group {
+        flex-grow: 1;
+        overflow-y: auto;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 10px;
+        background: #222;
+        border: 1px solid #444;
+        color: white;
+        box-sizing: border-box;
+    }
+
+    input[type="file"] {
+        padding: 6px;
+    }
+
+    label {
+        font-size: 10px;
+        color: #888;
+        text-transform: uppercase;
+        font-weight: bold;
+        display: block;
+        margin-bottom: 4px;
+    }
+
+    button {
+        width: 100%;
+        padding: 10px;
+        margin-bottom: 10px;
+        background: #222;
+        border: 1px solid #444;
+        color: white;
+        cursor: pointer;
+        font-weight: bold;
+    }
+
+    button:hover {
+        background: #333;
+    }
+
+    #saveButton {
+        background: #006f72;
+        border-color: #00aeb3;
+    }
+
+    #saveButton:hover {
+        background: #008b90;
+    }
+
+    .sidebar-credit {
+        padding-top: 20px;
+        margin-top: 10px;
+        border-top: 1px solid #333;
+        font-size: 12px;
+        color: #555;
+        text-align: center;
+    }
+
+    /* PREVIEW */
+    .frame {
+        flex: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: #000;
+        overflow: hidden;
+    }
+
+    canvas {
+        width: 1284px;
+        height: 724px;
+        max-width: 100%;
+        max-height: 100%;
+        image-rendering: auto;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="editor">
+
+    <div class="input-group">
+
+        <label>Programme Image / Video</label>
+        <input
+            id="mediaUpload"
+            type="file"
+            accept="image/*,video/*"
+        >
+
+        <button id="clearMedia" type="button">
+            Clear Image / Video
+        </button>
+
+        <label>Programme Title</label>
+        <input
+            id="programmeTitle"
+            type="text"
+            value="Nightmare Alley – Visions in Light & Darkness"
+            oninput="draw()"
+        >
+
+        <label>Programme Time</label>
+        <input
+            id="programmeTime"
+            type="text"
+            value="Next Saturday at 11pm"
+            oninput="draw()"
+        >
+
+        <button id="saveButton" type="button">
+            Save Image As
+        </button>
+
+    </div>
+
+    <div class="sidebar-credit">
+        Channel 4 Programme Card
+    </div>
+
+</div>
+
+<div class="frame">
+    <canvas id="channel4Canvas" width="1284" height="724"></canvas>
+</div>
+
+
+<script>
+
+const canvas = document.getElementById("channel4Canvas");
+const ctx = canvas.getContext("2d");
+
+const mediaUpload = document.getElementById("mediaUpload");
+const clearMedia = document.getElementById("clearMedia");
+const saveButton = document.getElementById("saveButton");
+
+const programmeTitle =
+    document.getElementById("programmeTitle");
+
+const programmeTime =
+    document.getElementById("programmeTime");
+
+
+/*
+    ============================================================
+    CHANNEL 4 TEMPLATE
+    ============================================================
+
+    background.png contains:
+    - the teal frame
+    - the Channel 4 logo
+    - the lower teal panel
+    - all other fixed graphics
+
+    The uploaded image/video is drawn BEFORE background.png.
+    This means the transparent parts of background.png remain
+    visible over the media.
+*/
+
+
+const background = new Image();
+
+background.src = "background(1).png";
+
+let mediaURL = null;
+let mediaType = null;
+
+const uploadedImage = new Image();
+
+const uploadedVideo = document.createElement("video");
+
+uploadedVideo.muted = true;
+uploadedVideo.autoplay = true;
+uploadedVideo.loop = true;
+uploadedVideo.playsInline = true;
+
+
+/*
+    ============================================================
+    MEDIA UPLOAD
+    ============================================================
+*/
+
+mediaUpload.addEventListener("change", function () {
+
+    const file = this.files[0];
+
+    if (!file) {
+        return;
+    }
+
+    // Remove old object URL
+    if (mediaURL) {
+        URL.revokeObjectURL(mediaURL);
+        mediaURL = null;
+    }
+
+    mediaURL = URL.createObjectURL(file);
+
+    /*
+        IMAGE
+    */
+
+    if (file.type.startsWith("image/")) {
+
+        mediaType = "image";
+
+        uploadedImage.onload = function () {
+            draw();
+        };
+
+        uploadedImage.src = mediaURL;
+
+    }
+
+    /*
+        VIDEO
+    */
+
+    else if (file.type.startsWith("video/")) {
+
+        mediaType = "video";
+
+        uploadedVideo.src = mediaURL;
+
+        uploadedVideo.onloadeddata = function () {
+
+            uploadedVideo.currentTime = 0;
+
+            uploadedVideo.play().catch(function () {});
+
+            draw();
+
+            videoLoop();
+        };
+
+    }
+
+});
+
+
+/*
+    ============================================================
+    VIDEO LOOP / LIVE PREVIEW
+    ============================================================
+*/
+
+function videoLoop() {
+
+    if (mediaType === "video") {
+
+        draw();
+
+        requestAnimationFrame(videoLoop);
+
+    }
+
+}
+
+
+/*
+    ============================================================
+    CLEAR MEDIA
+    ============================================================
+*/
+
+clearMedia.addEventListener("click", function () {
+
+    if (mediaURL) {
+        URL.revokeObjectURL(mediaURL);
+        mediaURL = null;
+    }
+
+    mediaType = null;
+
+    mediaUpload.value = "";
+
+    uploadedImage.src = "";
+
+    uploadedVideo.pause();
+    uploadedVideo.removeAttribute("src");
+    uploadedVideo.load();
+
+    draw();
+
+});
+
+
+/*
+    ============================================================
+    DRAW MEDIA
+    ============================================================
+*/
+
+/*
+    These are the dimensions of the image/video area
+    in the 1284 × 724 template.
+
+    The media fills the entire upper image area.
+
+    The background's transparent areas allow the media to show
+    through while the frame remains visible.
+*/
+
+const MEDIA_X = 0;
+const MEDIA_Y = 0;
+const MEDIA_WIDTH = 1284;
+const MEDIA_HEIGHT = 450;
+
+
+/*
+    Draw an image/video using object-fit: cover.
+*/
+
+function drawCover(source, x, y, width, height) {
+
+    const sourceWidth =
+        source.videoWidth ||
+        source.naturalWidth;
+
+    const sourceHeight =
+        source.videoHeight ||
+        source.naturalHeight;
+
+    if (!sourceWidth || !sourceHeight) {
+        return;
+    }
+
+    const sourceRatio =
+        sourceWidth / sourceHeight;
+
+    const targetRatio =
+        width / height;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = sourceWidth;
+    let sh = sourceHeight;
+
+    if (sourceRatio > targetRatio) {
+
+        /*
+            Source is wider than target.
+            Crop left/right.
+        */
+
+        sw = sourceHeight * targetRatio;
+
+        sx = (sourceWidth - sw) / 2;
+
+    }
+
+    else {
+
+        /*
+            Source is taller than target.
+            Crop top/bottom.
+        */
+
+        sh = sourceWidth / targetRatio;
+
+        sy = (sourceHeight - sh) / 2;
+
+    }
+
+    ctx.drawImage(
+        source,
+        sx,
+        sy,
+        sw,
+        sh,
+        x,
+        y,
+        width,
+        height
+    );
+
+}
+
+
+/*
+    ============================================================
+    MAIN DRAW
+    ============================================================
+*/
+
+function draw() {
+
+    ctx.clearRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+
+    /*
+        --------------------------------------------------------
+        1. DRAW THE UPLOADED MEDIA
+        --------------------------------------------------------
+    */
+
+    if (mediaType === "image") {
+
+        if (uploadedImage.complete &&
+            uploadedImage.naturalWidth > 0) {
+
+            drawCover(
+                uploadedImage,
+                MEDIA_X,
+                MEDIA_Y,
+                MEDIA_WIDTH,
+                MEDIA_HEIGHT
+            );
+
+        }
+
+    }
+
+
+    else if (mediaType === "video") {
+
+        if (uploadedVideo.readyState >= 2) {
+
+            drawCover(
+                uploadedVideo,
+                MEDIA_X,
+                MEDIA_Y,
+                MEDIA_WIDTH,
+                MEDIA_HEIGHT
+            );
+
+        }
+
+    }
+
+
+    /*
+        --------------------------------------------------------
+        2. DRAW THE CHANNEL 4 BACKGROUND
+        --------------------------------------------------------
+    */
+
+    if (
+        background.complete &&
+        background.naturalWidth > 0
+    ) {
+
+        ctx.drawImage(
+            background,
+            0,
+            0,
+            1284,
+            724
+        );
+
+    }
+
+
+    /*
+        --------------------------------------------------------
+        3. DRAW PROGRAMME TITLE
+        --------------------------------------------------------
+    */
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+
+    ctx.font =
+        'bold 37px "C4HeadlineBold", Arial, sans-serif';
+
+    ctx.fillStyle = "#ffffff";
+
+    ctx.fillText(
+        programmeTitle.value,
+        642,
+        494
+    );
+
+
+    /*
+        --------------------------------------------------------
+        4. DRAW PROGRAMME TIME
+        --------------------------------------------------------
+    */
+
+    ctx.font =
+        'normal 24px "xt-Regular", Arial, sans-serif';
+
+    ctx.fillStyle = "#54d5d5";
+
+    ctx.fillText(
+        programmeTime.value,
+        642,
+        538
+    );
+
+}
+
+
+/*
+    ============================================================
+    SAVE IMAGE
+    ============================================================
+
+    For an image:
+        saves the uploaded image.
+
+    For a video:
+        saves the CURRENT FRAME.
+
+    The video continues playing afterwards.
+    ============================================================
+*/
+
+saveButton.addEventListener("click", async function () {
+
+    /*
+        Wait for the custom fonts.
+    */
+
+    await document.fonts.ready;
+
+    /*
+        Redraw immediately before exporting so that a video
+        captures the exact frame currently being displayed.
+    */
+
+    draw();
+
+    /*
+        Give the browser a moment to finish drawing the frame.
+    */
+
+    requestAnimationFrame(function () {
+
+        const outputCanvas =
+            document.createElement("canvas");
+
+        outputCanvas.width = 1284;
+        outputCanvas.height = 724;
+
+        const outputCtx =
+            outputCanvas.getContext("2d");
+
+        /*
+            Instead of relying on the preview canvas, redraw
+            everything into the export canvas. This makes the
+            saved image exactly 1284 × 724.
+        */
+
+        /*
+            MEDIA
+        */
+
+        if (mediaType === "image") {
+
+            if (
+                uploadedImage.complete &&
+                uploadedImage.naturalWidth > 0
+            ) {
+
+                drawCoverToContext(
+                    outputCtx,
+                    uploadedImage,
+                    MEDIA_X,
+                    MEDIA_Y,
+                    MEDIA_WIDTH,
+                    MEDIA_HEIGHT
+                );
+
+            }
+
+        }
+
+        else if (mediaType === "video") {
+
+            if (uploadedVideo.readyState >= 2) {
+
+                /*
+                    IMPORTANT:
+                    This captures the current video frame.
+                */
+
+                drawCoverToContext(
+                    outputCtx,
+                    uploadedVideo,
+                    MEDIA_X,
+                    MEDIA_Y,
+                    MEDIA_WIDTH,
+                    MEDIA_HEIGHT
+                );
+
+            }
+
+        }
+
+
+        /*
+            BACKGROUND
+        */
+
+        outputCtx.drawImage(
+            background,
+            0,
+            0,
+            1284,
+            724
+        );
+
+
+        /*
+            TITLE
+        */
+
+        outputCtx.textAlign = "center";
+        outputCtx.textBaseline = "top";
+
+        outputCtx.font =
+            'bold 37px "C4HeadlineBold", Arial, sans-serif';
+
+        outputCtx.fillStyle = "#ffffff";
+
+        outputCtx.fillText(
+            programmeTitle.value,
+            642,
+            494
+        );
+
+
+        /*
+            TIME
+        */
+
+        outputCtx.font =
+            'normal 24px "xt-Regular", Arial, sans-serif';
+
+        outputCtx.fillStyle = "#54d5d5";
+
+        outputCtx.fillText(
+            programmeTime.value,
+            642,
+            538
+        );
+
+
+        /*
+            DOWNLOAD
+        */
+
+        const link =
+            document.createElement("a");
+
+        link.download =
+            "channel-4-programme-card.png";
+
+        link.href =
+            outputCanvas.toDataURL("image/png");
+
+        link.click();
+
+    });
+
+});
+
+
+/*
+    Same object-fit: cover calculation, but for any canvas
+    context. Used by the Save Image function.
+*/
+
+function drawCoverToContext(
+    context,
+    source,
+    x,
+    y,
+    width,
+    height
+) {
+
+    const sourceWidth =
+        source.videoWidth ||
+        source.naturalWidth;
+
+    const sourceHeight =
+        source.videoHeight ||
+        source.naturalHeight;
+
+    if (!sourceWidth || !sourceHeight) {
+        return;
+    }
+
+    const sourceRatio =
+        sourceWidth / sourceHeight;
+
+    const targetRatio =
+        width / height;
+
+    let sx = 0;
+    let sy = 0;
+    let sw = sourceWidth;
+    let sh = sourceHeight;
+
+    if (sourceRatio > targetRatio) {
+
+        sw = sourceHeight * targetRatio;
+
+        sx =
+            (sourceWidth - sw) / 2;
+
+    }
+
+    else {
+
+        sh =
+            sourceWidth / targetRatio;
+
+        sy =
+            (sourceHeight - sh) / 2;
+
+    }
+
+    context.drawImage(
+        source,
+        sx,
+        sy,
+        sw,
+        sh,
+        x,
+        y,
+        width,
+        height
+    );
+
+}
+
+
+/*
+    ============================================================
+    INITIAL DRAW
+    ============================================================
+*/
+
+background.onload = function () {
+    draw();
+};
+
+document.fonts.load('700 30px C4HeadlineBold').then(function () {
+    draw();
+}).catch(function () {
+    draw();
+});
+
+</script>
+
+</body>
+</html>
